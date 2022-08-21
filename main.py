@@ -1,20 +1,58 @@
 import argparse
+import logging
+import os
+from datetime import datetime
+
+from db.meta import Session
+from services.customer_payments_data_service import CustomerPaymentsDataService
+from validators.argpargse_serializers import date_serializer
+from validators.input_validators import is_valid_date_range
+
+logging.basicConfig(format="%(filename)s: %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
-def main(start=None, end=None):
-    pass
+def main(start_date: datetime, end_date: datetime, path: str):
+    if not is_valid_date_range(start_date=start_date, end_date=end_date):
+        logger.error("Invalid date range.")
+        return
+
+    with Session() as session:
+        CustomerPaymentsDataService(session).load_customers_payment_data_to_json(
+            start_date=start_date,
+            end_date=end_date,
+            path=path
+        )
 
 
-if __name__ == "__main__":
+def _get_input_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Get customer payments and write them to a JSON file."
     )
     parser.add_argument(
-        "-s", "--start", help="get payments on or after this date (YYYY-MM-DD)"
+        "-s", "--start",
+        help="Get payments on or after this date (YYYY-MM-DD)",
+        required=True,
+        type=date_serializer
     )
     parser.add_argument(
-        "-e", "--end", help="get payments before this date (YYYY-MM-DD)"
+        "-e", "--end",
+        help="Get payments before this date (YYYY-MM-DD)",
+        required=True,
+        type=date_serializer
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "-p", "--path",
+        help="The path to the directory where output file will be saved. "
+             "By default the file will be saved to the 'output' directory "
+             "in the script folder.",
+        default=os.path.join(os.getcwd(), "output")
+    )
 
-    main(start=args.start, end=args.end)
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = _get_input_args()
+
+    main(start_date=args.start, end_date=args.end, path=args.path)
