@@ -5,6 +5,7 @@ from typing import List
 import pytest
 from sqlalchemy.orm import Session
 
+from db.models import Customer, Invoice
 from services.customer_payments_data_service import CustomerPaymentsDataService
 from tests.factories import CustomerFactory, InvoiceFactory
 
@@ -91,17 +92,169 @@ class TestCustomerPaymentsDataService:
 
         # customer_4 invoices
         self.invoice_1_4 = InvoiceFactory(
-            CustomerId=self.customer_3.CustomerId,
+            CustomerId=self.customer_4.CustomerId,
             InvoiceDate=self.date_3,
             Total=Decimal("0.96")
         )
         self.invoice_2_4 = InvoiceFactory(
-            CustomerId=self.customer_3.CustomerId,
+            CustomerId=self.customer_4.CustomerId,
             InvoiceDate=self.date_4,
             Total=Decimal("0.97")
         )
 
-    def test_should_return_customers_payment_data(self, session: Session):
+    def test_should_return_whole_customers_payment_data(self, session: Session):
+        # act
+        generator = CustomerPaymentsDataService(session)._get_data_generator()
+
+        # assert
+        data = list(generator)
+
+        # check all customers returned
+        assert len(data) == 4
+
+        # check data sorted in right order
+        assert [data_row["customer_id"] for data_row in data] == [
+            self.customer_1.CustomerId,
+            self.customer_2.CustomerId,
+            self.customer_3.CustomerId,
+            self.customer_4.CustomerId
+        ]
+
+        customer_1_data = data[0]
+        customer_2_data = data[1]
+        customer_3_data = data[2]
+        customer_4_data = data[3]
+
+        assert (
+            float(customer_1_data["total_paid"])
+            >= float(customer_2_data["total_paid"])
+            >= float(customer_3_data["total_paid"])
+            >= float(customer_4_data["total_paid"])
+        )
+
+        # check customer's data is right
+        self._assert_customer_data(
+            customer_1_data,
+            self.customer_1,
+            [self.invoice_1_1, self.invoice_2_1, self.invoice_3_1, self.invoice_4_1]
+        )
+        self._assert_customer_data(
+            customer_2_data,
+            self.customer_2,
+            [self.invoice_1_2, self.invoice_2_2, self.invoice_3_2, self.invoice_4_2]
+        )
+        self._assert_customer_data(
+            customer_3_data,
+            self.customer_3,
+            [self.invoice_1_3, self.invoice_2_3, self.invoice_3_3, self.invoice_4_3]
+        )
+        self._assert_customer_data(
+            customer_4_data,
+            self.customer_4,
+            [self.invoice_1_4, self.invoice_2_4]
+        )
+
+    def test_should_return_customers_payment_data_gte_start_date(self, session: Session):
+        # act
+        generator = CustomerPaymentsDataService(session)._get_data_generator(
+            start_date=self.date_4
+        )
+
+        # assert
+        data = list(generator)
+
+        # check 4 customers returned
+        assert len(data) == 4
+
+        # check data sorted in right order
+        assert [data_row["customer_id"] for data_row in data] == [
+            self.customer_1.CustomerId,
+            self.customer_2.CustomerId,
+            self.customer_3.CustomerId,
+            self.customer_4.CustomerId
+        ]
+
+        customer_1_data = data[0]
+        customer_2_data = data[1]
+        customer_3_data = data[2]
+        customer_4_data = data[3]
+
+        assert (
+            float(customer_1_data["total_paid"])
+            >= float(customer_2_data["total_paid"])
+            >= float(customer_3_data["total_paid"])
+            >= float(customer_4_data["total_paid"])
+        )
+
+        # check customer's data is right
+        self._assert_customer_data(
+            customer_1_data,
+            self.customer_1,
+            [self.invoice_4_1]
+        )
+        self._assert_customer_data(
+            customer_2_data,
+            self.customer_2,
+            [self.invoice_4_2]
+        )
+        self._assert_customer_data(
+            customer_3_data,
+            self.customer_3,
+            [self.invoice_4_3]
+        )
+        self._assert_customer_data(
+            customer_4_data,
+            self.customer_4,
+            [self.invoice_2_4]
+        )
+
+    def test_should_return_customers_payment_data_lt_end_date(self, session: Session):
+        # act
+        generator = CustomerPaymentsDataService(session)._get_data_generator(
+            end_date=self.date_2
+        )
+
+        # assert
+        data = list(generator)
+
+        # check only 3 customers returned
+        assert len(data) == 3
+
+        # check data sorted in right order
+        assert [data_row["customer_id"] for data_row in data] == [
+            self.customer_1.CustomerId,
+            self.customer_2.CustomerId,
+            self.customer_3.CustomerId,
+        ]
+
+        customer_1_data = data[0]
+        customer_2_data = data[1]
+        customer_3_data = data[2]
+
+        assert (
+            float(customer_1_data["total_paid"])
+            >= float(customer_2_data["total_paid"])
+            >= float(customer_3_data["total_paid"])
+        )
+
+        # check customer's data is right
+        self._assert_customer_data(
+            customer_1_data,
+            self.customer_1,
+            [self.invoice_1_1]
+        )
+        self._assert_customer_data(
+            customer_2_data,
+            self.customer_2,
+            [self.invoice_1_2]
+        )
+        self._assert_customer_data(
+            customer_3_data,
+            self.customer_3,
+            [self.invoice_1_3]
+        )
+
+    def test_should_filter_customers_payment_data_by_date_range(self, session: Session):
         # act
         generator = CustomerPaymentsDataService(session)._get_data_generator(
             start_date=self.date_1,
@@ -109,20 +262,8 @@ class TestCustomerPaymentsDataService:
         )
 
         # assert
-        self._assert_customers_data(data=list(generator))
+        data = list(generator)
 
-    def test_should_return_customers_payment_data_when_many_batches(self, session: Session):
-        # act
-        generator = CustomerPaymentsDataService(session)._get_data_generator(
-            start_date=self.date_1,
-            end_date=self.date_3,
-            batch_size=1
-        )
-
-        # assert
-        self._assert_customers_data(data=list(generator))
-
-    def _assert_customers_data(self, data: List[dict]):
         # check only 3 customers returned
         assert len(data) == 3
 
@@ -144,33 +285,54 @@ class TestCustomerPaymentsDataService:
         )
 
         # check customer's data is right
-        assert customer_1_data == {
-            "customer_id": self.customer_1.CustomerId,
-            "first_name": self.customer_1.FirstName,
-            "last_name": self.customer_1.LastName,
-            "total_paid": str(self.invoice_1_1.Total + self.invoice_2_1.Total),
+        self._assert_customer_data(customer_1_data, self.customer_1, [self.invoice_1_1, self.invoice_2_1])
+        self._assert_customer_data(customer_2_data, self.customer_2, [self.invoice_1_2, self.invoice_2_2])
+        self._assert_customer_data(customer_3_data, self.customer_3, [self.invoice_1_3, self.invoice_2_3])
+
+    def test_should_filter_customers_payment_data_by_date_range_when_many_batches(self, session: Session):
+        # act
+        generator = CustomerPaymentsDataService(session)._get_data_generator(
+            start_date=self.date_1,
+            end_date=self.date_3,
+            batch_size=1
+        )
+
+        # assert
+        data = list(generator)
+
+        # check only 3 customers returned
+        assert len(data) == 3
+
+        # check data sorted in right order
+        assert [data_row["customer_id"] for data_row in data] == [
+            self.customer_1.CustomerId,
+            self.customer_2.CustomerId,
+            self.customer_3.CustomerId
+        ]
+
+        customer_1_data = data[0]
+        customer_2_data = data[1]
+        customer_3_data = data[2]
+
+        assert (
+            float(customer_1_data["total_paid"])
+            >= float(customer_2_data["total_paid"])
+            >= float(customer_3_data["total_paid"])
+        )
+
+        # check customer's data is right
+        self._assert_customer_data(customer_1_data, self.customer_1, [self.invoice_1_1, self.invoice_2_1])
+        self._assert_customer_data(customer_2_data, self.customer_2, [self.invoice_1_2, self.invoice_2_2])
+        self._assert_customer_data(customer_3_data, self.customer_3, [self.invoice_1_3, self.invoice_2_3])
+
+    def _assert_customer_data(self, data: dict, customer: Customer, invoices: List[Invoice]):
+        assert data == {
+            "customer_id": customer.CustomerId,
+            "first_name": customer.FirstName,
+            "last_name": customer.LastName,
+            "total_paid": str(sum(invoice.Total for invoice in invoices)),
             "individual_payments": [
-                {"date": str(self.invoice_1_1.InvoiceDate), "amount": str(self.invoice_1_1.Total)},
-                {"date": str(self.invoice_2_1.InvoiceDate), "amount": str(self.invoice_2_1.Total)}
-            ]
-        }
-        assert customer_2_data == {
-            "customer_id": self.customer_2.CustomerId,
-            "first_name": self.customer_2.FirstName,
-            "last_name": self.customer_2.LastName,
-            "total_paid": str(self.invoice_1_2.Total + self.invoice_2_2.Total),
-            "individual_payments": [
-                {"date": str(self.invoice_1_2.InvoiceDate), "amount": str(self.invoice_1_2.Total)},
-                {"date": str(self.invoice_2_2.InvoiceDate), "amount": str(self.invoice_2_2.Total)}
-            ]
-        }
-        assert customer_3_data == {
-            "customer_id": self.customer_3.CustomerId,
-            "first_name": self.customer_3.FirstName,
-            "last_name": self.customer_3.LastName,
-            "total_paid": str(self.invoice_1_3.Total + self.invoice_2_3.Total),
-            "individual_payments": [
-                {"date": str(self.invoice_1_3.InvoiceDate), "amount": str(self.invoice_1_3.Total)},
-                {"date": str(self.invoice_2_3.InvoiceDate), "amount": str(self.invoice_2_3.Total)}
+                {"date": str(invoice.InvoiceDate), "amount": str(invoice.Total)}
+                for invoice in invoices
             ]
         }

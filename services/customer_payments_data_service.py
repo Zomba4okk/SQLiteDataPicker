@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Generator, List
+from typing import Generator, List, Optional
 
 import simplejson
 from sqlalchemy import desc
@@ -16,7 +16,12 @@ class CustomerPaymentsDataService:
     def __init__(self, session: Session):
         self._session = session
 
-    def load_customers_payment_data_to_json(self, start_date: datetime, end_date: datetime, path: str = None) -> None:
+    def load_customers_payment_data_to_json(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        path: str = None
+    ) -> None:
         data = self._get_data_generator(start_date, end_date)
         file_path = self._get_file_path(path)
 
@@ -24,7 +29,12 @@ class CustomerPaymentsDataService:
         with open(file_path, "w") as file:
             simplejson.dump(data, file, iterable_as_array=True, indent=True)
 
-    def _get_data_generator(self, start_date: datetime, end_date: datetime, batch_size: int = 10000) -> Generator[dict, None, None]:
+    def _get_data_generator(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        batch_size: int = 10000
+    ) -> Generator[dict, None, None]:
         offset = 0
 
         while True:
@@ -43,7 +53,13 @@ class CustomerPaymentsDataService:
 
             offset += batch_size
 
-    def _get_customers_data(self, start_date: datetime, end_date: datetime, batch_size: int, offset: int) -> List[Row]:
+    def _get_customers_data(
+        self,
+        start_date: Optional[datetime],
+        end_date: Optional[datetime],
+        batch_size: int,
+        offset: int
+    ) -> List[Row]:
         customers_subquery = self._get_customers_subquery(
             start_date=start_date,
             end_date=end_date,
@@ -51,30 +67,34 @@ class CustomerPaymentsDataService:
             offset=offset
         )
 
-        return (
+        queryset = (
             self._session.query(Customer)
             .join(customers_subquery, customers_subquery.c.CustomerId == Customer.CustomerId)
             .join(Customer.invoice_collection)
             .options(contains_eager(Customer.invoice_collection))
-            .where(
-                Invoice.InvoiceDate >= start_date,
-                Invoice.InvoiceDate < end_date,
-            )
             .with_entities(
                 Customer,
                 customers_subquery.c.total_paid
             )
-            .all()
         )
 
-    def _get_customers_subquery(self, start_date: datetime, end_date: datetime, batch_size: int, offset: int) -> Subquery:
+        if start_date:
+            queryset = queryset.where(Invoice.InvoiceDate >= start_date)
+        if end_date:
+            queryset = queryset.where(Invoice.InvoiceDate < end_date)
+
+        return queryset.all()
+
+    def _get_customers_subquery(
+        self,
+        start_date: Optional[datetime],
+        end_date: Optional[datetime],
+        batch_size: int,
+        offset: int
+    ) -> Subquery:
         base_queryset = (
             self._session.query(Customer)
             .join(Customer.invoice_collection)
-            .where(
-                Invoice.InvoiceDate >= start_date,
-                Invoice.InvoiceDate < end_date,
-            )
             .group_by(Customer.CustomerId)
             .with_entities(
                 Customer.CustomerId,
@@ -82,6 +102,11 @@ class CustomerPaymentsDataService:
             )
             .order_by(desc("total_paid"))
         )
+
+        if start_date:
+            base_queryset = base_queryset.where(Invoice.InvoiceDate >= start_date)
+        if end_date:
+            base_queryset = base_queryset.where(Invoice.InvoiceDate < end_date)
 
         return (
             base_queryset
@@ -105,7 +130,15 @@ class CustomerPaymentsDataService:
             ]
         }
 
-    @staticmethod
-    def _get_file_path(path: str) -> str:
-        file_name = f"customer_payments_data_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}.json"
-        return os.path.join(path, file_name)
+    def _get_file_path(self, path: str, copy: int = 0) -> str:
+        file_name = f"customer_payments_data_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}"
+        if copy:
+            file_name += f"({copy})"
+        file_name += ".json"
+
+        file_path = os.path.join(path, file_name)
+
+        if os.path.exists(file_path):
+            return self._get_file_path(path, copy + 1)
+
+        return file_path

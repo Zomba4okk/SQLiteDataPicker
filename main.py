@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 from datetime import datetime
+from typing import Optional
 
 from db.meta import Session
 from services.customer_payments_data_service import CustomerPaymentsDataService
@@ -12,8 +13,11 @@ logging.basicConfig(format="%(filename)s: %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def main(start_date: datetime, end_date: datetime, path: str):
-    if not is_valid_date_range(start_date=start_date, end_date=end_date):
+def main(start_date: Optional[datetime], end_date: Optional[datetime], path: str):
+    if (
+        start_date and end_date
+        and not is_valid_date_range(start_date=start_date, end_date=end_date)
+    ):
         logger.error("Invalid date range.")
         return
 
@@ -32,13 +36,11 @@ def _get_input_args() -> argparse.Namespace:
     parser.add_argument(
         "-s", "--start",
         help="Get payments on or after this date (YYYY-MM-DD)",
-        required=True,
         type=date_serializer
     )
     parser.add_argument(
         "-e", "--end",
         help="Get payments before this date (YYYY-MM-DD)",
-        required=True,
         type=date_serializer
     )
     parser.add_argument(
