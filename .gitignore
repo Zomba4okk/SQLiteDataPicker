@@ -131,3 +131,7 @@ dmypy.json
 # IDEs
 .idea
 .vscode
+
+# Local files
+Chinook_Sqlite.sqlite
+output/
